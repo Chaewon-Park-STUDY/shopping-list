@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>쇼핑 리스트</title>
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --card: #ffffff;
+    --text: #1c1e21;
+    --muted: #8a8f98;
+    --border: #e3e5e8;
+    --accent: #3b82f6;
+    --danger: #ef4444;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181d;
+      --card: #1f2229;
+      --text: #e8eaed;
+      --muted: #8a8f98;
+      --border: #2e323b;
+      --accent: #60a5fa;
+      --danger: #f87171;
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding: 32px 16px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", sans-serif;
+    line-height: 1.5;
+  }
+
+  .app {
+    max-width: 480px;
+    margin: 0 auto;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+
+  header {
+    padding: 20px 20px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  h1 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+  }
+
+  #count {
+    margin: 2px 0 0;
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  form {
+    display: flex;
+    gap: 8px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  #input {
+    flex: 1;
+    min-width: 0;
+    padding: 10px 12px;
+    font: inherit;
+    font-size: 15px;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    outline: none;
+  }
+
+  #input:focus { border-color: var(--accent); }
+
+  button {
+    font: inherit;
+    cursor: pointer;
+    border: none;
+    background: none;
+    color: inherit;
+  }
+
+  #add {
+    padding: 10px 18px;
+    font-size: 15px;
+    font-weight: 550;
+    color: #fff;
+    background: var(--accent);
+    border-radius: 8px;
+  }
+
+  #add:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+
+  ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  li {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  li:last-child { border-bottom: none; }
+
+  li input[type="checkbox"] {
+    flex: none;
+    width: 19px;
+    height: 19px;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  .name {
+    flex: 1;
+    min-width: 0;
+    font-size: 15px;
+    overflow-wrap: anywhere;
+  }
+
+  li.done .name {
+    color: var(--muted);
+    text-decoration: line-through;
+  }
+
+  .delete {
+    flex: none;
+    padding: 4px 8px;
+    font-size: 18px;
+    line-height: 1;
+    color: var(--muted);
+    border-radius: 6px;
+  }
+
+  .delete:hover {
+    color: var(--danger);
+    background: var(--bg);
+  }
+
+  #empty {
+    padding: 40px 20px;
+    text-align: center;
+    font-size: 14px;
+    color: var(--muted);
+  }
+
+  footer {
+    display: flex;
+    justify-content: flex-end;
+    padding: 12px 20px;
+    border-top: 1px solid var(--border);
+  }
+
+  #clear {
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  #clear:hover { color: var(--danger); }
+
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header>
+    <h1>쇼핑 리스트</h1>
+    <p id="count"></p>
+  </header>
+
+  <form id="form" autocomplete="off">
+    <input id="input" type="text" placeholder="살 물건을 입력하세요" maxlength="100" required>
+    <button id="add" type="submit">추가</button>
+  </form>
+
+  <ul id="list"></ul>
+  <p id="empty">아직 담은 물건이 없습니다.</p>
+
+  <footer hidden id="footer">
+    <button id="clear" type="button">체크한 항목 지우기</button>
+  </footer>
+</div>
+
+<script>
+  const STORAGE_KEY = 'shopping-list';
+
+  const form = document.getElementById('form');
+  const input = document.getElementById('input');
+  const addBtn = document.getElementById('add');
+  const list = document.getElementById('list');
+  const empty = document.getElementById('empty');
+  const footer = document.getElementById('footer');
+  const clearBtn = document.getElementById('clear');
+  const count = document.getElementById('count');
+
+  let items = load();
+
+  function load() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(STORAGE_KEY));
+      if (!Array.isArray(raw)) return [];
+      return raw
+        .filter(it => it && typeof it.name === 'string')
+        .map(it => ({ id: it.id || newId(), name: it.name, done: !!it.done }));
+    } catch {
+      return [];
+    }
+  }
+
+  function save() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+    } catch (e) {
+      // 저장 용량(출처당 5 MiB) 초과 또는 사생활 보호 모드에서 저장이 막힌 경우.
+      // 목록은 메모리에 그대로 두고 사용자에게만 알린다.
+      console.warn('목록을 저장하지 못했습니다.', e);
+      alert('목록을 저장하지 못했습니다. 브라우저 저장 공간이 가득 찼거나 저장이 차단되어 있습니다.');
+    }
+  }
+
+  function newId() {
+    // crypto.randomUUID()는 최신 브라우저의 표준 API(보안 컨텍스트 필요).
+    // file:// 등 비보안 컨텍스트에서는 없을 수 있어 대체 경로를 둔다.
+    return crypto.randomUUID ? crypto.randomUUID()
+      : 'i' + Math.random().toString(36).slice(2, 10);
+  }
+
+  function render() {
+    list.textContent = '';
+
+    for (const item of items) {
+      const li = document.createElement('li');
+      li.className = item.done ? 'done' : '';
+
+      const check = document.createElement('input');
+      check.type = 'checkbox';
+      check.checked = item.done;
+      check.addEventListener('change', () => toggle(item.id));
+
+      const name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = item.name;
+
+      const del = document.createElement('button');
+      del.className = 'delete';
+      del.type = 'button';
+      del.textContent = '×';
+      del.title = '삭제';
+      del.setAttribute('aria-label', item.name + ' 삭제');
+      del.addEventListener('click', () => remove(item.id));
+
+      li.append(check, name, del);
+      list.append(li);
+    }
+
+    const done = items.filter(it => it.done).length;
+    empty.hidden = items.length > 0;
+    footer.hidden = done === 0;
+    count.textContent = items.length ? `${items.length}개 중 ${done}개 완료` : '';
+  }
+
+  function add(name) {
+    items.push({ id: newId(), name, done: false });
+    save();
+    render();
+  }
+
+  function toggle(id) {
+    const item = items.find(it => it.id === id);
+    if (!item) return;
+    item.done = !item.done;
+    save();
+    render();
+  }
+
+  function remove(id) {
+    items = items.filter(it => it.id !== id);
+    save();
+    render();
+  }
+
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    const name = input.value.trim();
+    if (!name) return;
+    add(name);
+    input.value = '';
+    addBtn.disabled = true;
+    input.focus();
+  });
+
+  input.addEventListener('input', () => {
+    addBtn.disabled = input.value.trim() === '';
+  });
+
+  clearBtn.addEventListener('click', () => {
+    items = items.filter(it => !it.done);
+    save();
+    render();
+  });
+
+  // 같은 출처의 다른 탭에서 목록이 바뀌면 이 탭에도 반영한다.
+  // storage 이벤트는 변경을 일으킨 탭 자신에게는 발생하지 않는다.
+  window.addEventListener('storage', e => {
+    if (e.key !== STORAGE_KEY && e.key !== null) return;
+    items = load();
+    render();
+  });
+
+  addBtn.disabled = true;
+  render();
+  input.focus();
+</script>
+
+</body>
+</html>
