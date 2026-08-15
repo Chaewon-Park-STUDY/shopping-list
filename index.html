@@ -166,6 +166,15 @@
     color: var(--muted);
   }
 
+  #status {
+    margin: 0;
+    padding: 10px 20px;
+    font-size: 13px;
+    color: var(--danger);
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+  }
+
   footer {
     display: flex;
     justify-content: flex-end;
@@ -191,6 +200,8 @@
     <p id="count"></p>
   </header>
 
+  <p id="status" role="status" hidden></p>
+
   <form id="form" autocomplete="off">
     <input id="input" type="text" placeholder="살 물건을 입력하세요" maxlength="100" required>
     <button id="add" type="submit">추가</button>
@@ -204,8 +215,16 @@
   </footer>
 </div>
 
-<script>
-  const STORAGE_KEY = 'shopping-list';
+<script type="module">
+  import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+  // 공개 키(publishable key)는 브라우저에 노출되는 것이 정상이다.
+  // 실제 접근 통제는 shopping_items 테이블의 RLS 정책이 담당한다.
+  const SUPABASE_URL = 'https://hniauzdsgbptkhmgqjkq.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_pDO7zZWm2OOkdSx0YvPWVw_X5Lb2oqF';
+  const TABLE = 'shopping_items';
+
+  const db = createClient(SUPABASE_URL, SUPABASE_KEY);
 
   const form = document.getElementById('form');
   const input = document.getElementById('input');
@@ -215,37 +234,38 @@
   const footer = document.getElementById('footer');
   const clearBtn = document.getElementById('clear');
   const count = document.getElementById('count');
+  const status = document.getElementById('status');
 
-  let items = load();
+  let items = [];
+  let loading = true;
 
-  function load() {
-    try {
-      const raw = JSON.parse(localStorage.getItem(STORAGE_KEY));
-      if (!Array.isArray(raw)) return [];
-      return raw
-        .filter(it => it && typeof it.name === 'string')
-        .map(it => ({ id: it.id || newId(), name: it.name, done: !!it.done }));
-    } catch {
-      return [];
-    }
+  function fail(message, error) {
+    console.error(message, error);
+    status.textContent = message;
+    status.hidden = false;
   }
 
-  function save() {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-    } catch (e) {
-      // 저장 용량(출처당 5 MiB) 초과 또는 사생활 보호 모드에서 저장이 막힌 경우.
-      // 목록은 메모리에 그대로 두고 사용자에게만 알린다.
-      console.warn('목록을 저장하지 못했습니다.', e);
-      alert('목록을 저장하지 못했습니다. 브라우저 저장 공간이 가득 찼거나 저장이 차단되어 있습니다.');
-    }
+  function clearStatus() {
+    status.textContent = '';
+    status.hidden = true;
   }
 
-  function newId() {
-    // crypto.randomUUID()는 최신 브라우저의 표준 API(보안 컨텍스트 필요).
-    // file:// 등 비보안 컨텍스트에서는 없을 수 있어 대체 경로를 둔다.
-    return crypto.randomUUID ? crypto.randomUUID()
-      : 'i' + Math.random().toString(36).slice(2, 10);
+  // 서버를 유일한 진실로 삼는다. 쓰기 후에는 실시간 이벤트가 이 함수를 다시 부른다.
+  async function refresh() {
+    const { data, error } = await db
+      .from(TABLE)
+      .select('id, name, done')
+      .order('created_at');
+
+    if (error) {
+      fail('목록을 불러오지 못했습니다. 연결을 확인해 주세요.', error);
+      return;
+    }
+
+    items = data;
+    loading = false;
+    clearStatus();
+    render();
   }
 
   function render() {
@@ -277,62 +297,100 @@
     }
 
     const done = items.filter(it => it.done).length;
+    empty.textContent = loading ? '불러오는 중…' : '아직 담은 물건이 없습니다.';
     empty.hidden = items.length > 0;
     footer.hidden = done === 0;
     count.textContent = items.length ? `${items.length}개 중 ${done}개 완료` : '';
   }
 
-  function add(name) {
-    items.push({ id: newId(), name, done: false });
-    save();
+  // 아래 세 함수는 화면을 먼저 바꾸고 서버에 반영한다(낙관적 갱신).
+  // 서버가 거부하면 이전 상태로 되돌리고 이유를 보여 준다.
+  async function add(name) {
+    const { data, error } = await db
+      .from(TABLE)
+      .insert({ name })
+      .select('id, name, done')
+      .single();
+
+    if (error) {
+      fail('항목을 추가하지 못했습니다.', error);
+      return;
+    }
+
+    items.push(data);
+    clearStatus();
     render();
   }
 
-  function toggle(id) {
+  async function toggle(id) {
     const item = items.find(it => it.id === id);
     if (!item) return;
-    item.done = !item.done;
-    save();
+
+    const next = !item.done;
+    item.done = next;
     render();
+
+    const { error } = await db.from(TABLE).update({ done: next }).eq('id', id);
+    if (error) {
+      item.done = !next;
+      render();
+      fail('체크 상태를 저장하지 못했습니다.', error);
+    }
   }
 
-  function remove(id) {
+  async function remove(id) {
+    const before = items;
     items = items.filter(it => it.id !== id);
-    save();
     render();
+
+    const { error } = await db.from(TABLE).delete().eq('id', id);
+    if (error) {
+      items = before;
+      render();
+      fail('항목을 삭제하지 못했습니다.', error);
+    }
   }
 
   form.addEventListener('submit', e => {
     e.preventDefault();
     const name = input.value.trim();
     if (!name) return;
-    add(name);
     input.value = '';
     addBtn.disabled = true;
     input.focus();
+    add(name);
   });
 
   input.addEventListener('input', () => {
     addBtn.disabled = input.value.trim() === '';
   });
 
-  clearBtn.addEventListener('click', () => {
+  clearBtn.addEventListener('click', async () => {
+    const doneIds = items.filter(it => it.done).map(it => it.id);
+    if (!doneIds.length) return;
+
+    const before = items;
     items = items.filter(it => !it.done);
-    save();
     render();
+
+    const { error } = await db.from(TABLE).delete().in('id', doneIds);
+    if (error) {
+      items = before;
+      render();
+      fail('체크한 항목을 지우지 못했습니다.', error);
+    }
   });
 
-  // 같은 출처의 다른 탭에서 목록이 바뀌면 이 탭에도 반영한다.
-  // storage 이벤트는 변경을 일으킨 탭 자신에게는 발생하지 않는다.
-  window.addEventListener('storage', e => {
-    if (e.key !== STORAGE_KEY && e.key !== null) return;
-    items = load();
-    render();
-  });
+  // 다른 탭이나 다른 기기에서 목록이 바뀌면 실시간으로 받아 다시 그린다.
+  // 자기 자신이 일으킨 변경에도 이벤트가 오지만, refresh()는 여러 번 불려도 안전하다.
+  db.channel('shopping-items')
+    .on('postgres_changes', { event: '*', schema: 'public', table: TABLE }, refresh)
+    .subscribe();
 
   addBtn.disabled = true;
   render();
   input.focus();
+  refresh();
 </script>
 
 </body>
