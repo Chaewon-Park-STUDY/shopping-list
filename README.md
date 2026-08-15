@@ -2,7 +2,7 @@
 
 바닐라 HTML/CSS/JS로 만든 단일 파일 쇼핑 리스트 웹앱. 외부 라이브러리와 빌드 과정이 없습니다.
 
-**[▶ 바로 실행해 보기](https://chaewon-park-study.github.io/shopping-list/shopping-list.html)**
+**[▶ 바로 실행해 보기](https://chaewon-park-study.github.io/shopping-list/)**
 
 ![스크린샷](shopping-list-verified.png)
 
@@ -17,13 +17,13 @@
 
 ## 실행 방법
 
-`shopping-list.html` 파일을 브라우저로 열면 끝입니다. 서버가 필요 없습니다.
+`index.html` 파일을 브라우저로 열면 끝입니다. 서버가 필요 없습니다.
 
 로컬 서버로 띄우고 싶다면:
 
 ```bash
 python -m http.server 8137
-# http://127.0.0.1:8137/shopping-list.html
+# http://127.0.0.1:8137/
 ```
 
 > `file://`로 열면 `crypto.randomUUID()`를 쓸 수 없어 대체 ID 생성 방식으로 넘어갑니다.
